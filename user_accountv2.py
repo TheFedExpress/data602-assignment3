@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sat Feb 17 16:53:12 2018
-
 @author: pgood
 """
 
@@ -19,7 +18,6 @@ class User:
     #This would also require two lines on the P/L, causing confusion
     def evalTransaction(self, tran_type, shares, price, ticker, db, pl, blotter):
        from datetime import datetime
-       
        cash = pl.pl.loc['cash', 'market']
        total = shares * price
        
@@ -50,7 +48,8 @@ class User:
             else:#Process transaction
                 date = datetime.now ()
                 trans = (cash - total,  ticker, -total, price, shares, tran_type)
-                pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares)
+                pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares, 
+                           date.strftime('%y%m%d%H%M%S'))
                 blotter.eval_blotter(db, date, trans)
                 self.message = "Success"
                 
@@ -75,7 +74,8 @@ class User:
             else:#Process transaction
                date = datetime.now ()
                trans = (cash + total,  ticker, total, price, shares, tran_type)
-               pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares)
+               pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares, 
+                          date.strftime('%y%m%d%H%M%S'))
                blotter.eval_blotter(db, date, trans)
                self.message = "Success"
     
@@ -83,6 +83,7 @@ class User:
         import pandas as pd
         #reset db
         db.db.pl.delete_many({})
+        db.db.pl_hist.delete_many({})
         db.db.blotter.delete_many({})
         db.db.cur.delete_many({})
         db.currency_update('usdt')
@@ -97,6 +98,7 @@ class User:
         "allocation_by_shares": 0.0, "allocation_by_dollars": 100.0}}
         pl.pl = pd.DataFrame.from_dict(start, orient = 'index')
         db.pl_insert(pl.pl, 'cash')
+        
         
         #reset user
         self.currency = 'USDT'
@@ -186,6 +188,8 @@ class PL:
             self.pl = pd.DataFrame.from_dict(start, orient = 'index')
             db.pl_insert(self.pl, 'cash')
             
+            self.pl_hist = pd.DataFrame(columns = ['crypto', 'wap', 'rpl', 'position', 'market'])           
+            
         else: #recreate pl from last session
             pl_recs = db.db.pl.find({})
             pl_dict = {}
@@ -194,7 +198,19 @@ class PL:
                     if key != '_id':
                         pl_dict[key] = rec[key]
             self.pl = pd.DataFrame.from_dict(pl_dict, orient = 'index')        
-    
+            if db.db.blotter.count() > 0:
+                pl_hist = {}
+                hist_recs = db.db.pl_hist.find({})
+                for rec in hist_recs:
+                    for key in rec.keys():
+                        if key != '_id':
+                            pl_hist[key] = rec[key]
+
+                self.pl_hist = pd.DataFrame.from_dict(pl_hist, orient = 'index')
+                print(self.pl_hist)
+
+            else:
+                self.pl_hist = pd.DataFrame(columns = ['crypto', 'wap', 'rpl', 'position', 'market']) 
     def check_margin(self):
         from get_currency_info import get_current
         
@@ -204,11 +220,14 @@ class PL:
                 margin += self.pl.loc[currency, "position"] * get_current(currency, "buy") * -1
         return margin
     
-    def eval_pl(self, tran_type, shares, price, ticker, total, db, new, prev_shares):
+    def eval_pl(self, tran_type, shares, price, ticker, total, db, new, prev_shares, date):
         #only certain columns that form the "base" data are calculated here.  
         #Columns like upl are only calculated when the user views the pl because 
         #those rely on market value.  This approach should be more efficient
         #in terms of performance and coding
+        from get_currency_info import get_current
+        
+        market = get_current(ticker, 'check')
         if tran_type in ('buy', 'cover'):
             self.pl.loc['cash', 'market'] -= total
             
@@ -218,15 +237,22 @@ class PL:
                 if tran_type == "buy":
                     
                     if self.pl.loc[ticker, "position"] == 0:
-                        self.pl.loc[ticker, "wap"] = price
+                        self.pl.loc[ticker, 'wap'] = price
+                        self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = (
+                                ticker, price, new_shares, market)
             
                     else:
                         prev_value = prev_shares * self.pl.loc[ticker, "wap"]
-                        self.pl.loc[ticker, "wap"] = (prev_value + shares * price)/new_shares
+                        self.pl.loc[ticker, 'wap'] = (prev_value + shares * price)/new_shares
+                        self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = (ticker, new_shares,
+                                        (prev_value + shares * price)/new_shares, market)
                         
                 else:#Cover
                     gain = self.pl.loc[ticker, "wap"] * shares - total
                     self.pl.loc[ticker, "rpl"]  = self.pl.loc[ticker, "rpl"] + gain
+                    self.pl_hist.loc[date, ['crypto', 'rpl', 'position', 'market']]  = (
+                        'ticker', self.pl.loc[ticker, "rpl"] + gain, new_shares, market)
+                    
                     
                 #both    
                 self.pl.loc[ticker, "position"] = new_shares
@@ -234,11 +260,15 @@ class PL:
                     self.pl.loc[ticker, "wap"] = 0
                 db.pl_update(self.pl, ticker)
                 db.pl_update(self.pl, 'cash')
+                db.pl_hist_insert(self.pl_hist, date)
                 
             else:#new currencies
                 self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                      'allocation_by_dollars', 'allocation_by_shares']] = (shares, 0, price, 0, 0, 0, 0, 0)
+                self.pl_hist.loc[date, ['crypto', 'wap', 'rpl', 'position', 'market']] = (
+                    ticker, price, 0, new_shares, market)
                 db.pl_insert(self.pl, ticker)
+                db.pl_hist_insert(self.pl_hist, date)
                 db.pl_update(self.pl, 'cash')
                 
         else:#sell/short
@@ -250,15 +280,20 @@ class PL:
                if tran_type == "sell":
                    gain = total -  self.pl.loc[ticker, 'wap'] * shares
                    self.pl.loc[ticker, 'rpl']  = self.pl.loc[ticker, "rpl"] + gain
+                   self.pl_hist.loc[date, ['rpl', 'crypto', 'position', 'market']]  = (
+                       self.pl.loc[ticker, "rpl"] + gain, ticker, new_shares, market)
                    
                else:#short
 
                    if self.pl.loc[ticker, 'position'] == 0:
                        self.pl.loc[ticker, "wap"] = price
+                       self.pl_hist.loc[date, ['crytpo', 'wap']] = (ticker, price)
                        
                    else:
                        prev_value = prev_shares * self.pl.loc[ticker, "wap"]*-1
                        self.pl.loc[ticker, "wap"] = (prev_value + shares * price)/new_shares*-1
+                       self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = ( 
+                           ticker, (prev_value + shares * price)/new_shares*-1, new_shares, market)
                #both
                self.pl.loc[ticker, "position"] = new_shares
                if new_shares == 0:
@@ -266,11 +301,14 @@ class PL:
                    
                db.pl_update(self.pl, ticker)
                db.pl_update(self.pl, 'cash')
+               db.pl_hist_insert(self.pl_hist, date)
                
            else:#new currencies
                self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                  'allocation_by_dollars', 'allocation_by_shares']] = (-shares, 0, price, 0, 0, -shares*price, 0, 0)
+               self.pl_hist.loc[date, ['crytpo', 'wap', 'rpl', 'position', 'market']] = (ticker, price, 0, shares, market)
                db.pl_insert(self.pl, ticker)
+               db.pl_hist_insert(self.pl_hist, date)
                db.pl_update(self.pl, 'cash')
 
 
@@ -352,8 +390,8 @@ class UserDB:
     def __init__(self):
         from pymongo import MongoClient
         
-        client = MongoClient('mongodb://cuny:data@ds153958.mlab.com:53958/currency-app', connectTimeoutMS = 50000)
-        self.db = client.get_database('currency-app')
+        client = MongoClient('mongodb://cuny:data@ds157639.mlab.com:57639/currency_v2', connectTimeoutMS = 50000)
+        self.db = client.get_database('currency_v2')
         
         if self.db.pl.count() > 0:
             self.new_account = 0
@@ -365,6 +403,10 @@ class UserDB:
     def pl_insert(self, df, ticker):
         item = df.loc[ticker].to_dict()
         self.db.pl.insert_one({ticker: item})
+        
+    def pl_hist_insert(self, df, date):
+        item = df.loc[date].to_dict()
+        self.db.pl_hist.insert_one({date: item})
         
     def pl_update(self, df, ticker):
         item = df.loc[ticker].to_dict()
@@ -384,4 +426,3 @@ class UserDB:
          vals.append(seconds)
          doc = dict(zip(keys, vals))
          self.db.blotter.insert_one(doc)
-        
