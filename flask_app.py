@@ -59,8 +59,23 @@ def blotter():
 @app.route("/pl")
 def pl():
     my_pl.showPL(account)
+    all_tickers = my_pl.pl_tickers()
+    ticker_list = ['<option value="{}"></option>'.format(ticker) for ticker in all_tickers]
     return render_template('pl.html', table = my_pl.pl_view.to_html(index = False), 
-                           currency = account.currency)
+                           currency = account.currency, ticker_list = ticker_list)
+@app.route('/vwap')
+def show_vwap():
+    from plotly.offline import plot
+    from charts import vwap
+    
+    ticker = request.args.get('ticker')
+    
+    if ticker != None:
+        data = vwap(my_pl.pl_hist, ticker)
+        my_plot = plot(data, output_type="div", show_link=False)
+    else:
+        my_plot = 'Ticker not found'
+    return render_template('graph.html', my_plot = my_plot)
 
 @app.route("/trade")
 def trade():

@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html>
 	<head>
+	<script src="https://d14fo0winaifog.cloudfront.net/plotly-basic.js"></script>
+	<script>
+    		function loadVWAP()
+    		{
+			var tick = document.getElementById('ticker').value
+        		window.open('vwap?ticker=' + tick, '_blank')
+    		}
+	</script>
 	<style>
 	a {
   	font: bold 11px Arial;
@@ -45,6 +53,14 @@ th{
 		{{table | safe}}
 	<br><br>
 	<div class = 'cur'>Currency: {{currency | safe}}</div>
+	      <p>Enter Ticker:</p><br>
+              <input type = 'text' id = 'ticker' list = 'ticker_list'><br><br>
+	      <datalist id = 'ticker_list'>
+	      {% for ticker in ticker_list %}
+			{{ticker | safe}}
+	      {% endfor %}
+	      </datalist>
+              <button type = 'button' id = 'vwap' onclick = 'return loadVWAP()'>Show VWAP History</button> 
 	<a href = '/'>Home</a>
 	</body>
 	

@@ -75,7 +75,7 @@ class User:
                date = datetime.now ()
                trans = (cash + total,  ticker, total, price, shares, tran_type)
                pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares, 
-                          date.strftime('%y%m%d%H%M%S'))
+                          date.strftime('%Y%m%d%H%M%S'))
                blotter.eval_blotter(db, date, trans)
                self.message = "Success"
     
@@ -266,7 +266,7 @@ class PL:
                 self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                      'allocation_by_dollars', 'allocation_by_shares']] = (shares, 0, price, 0, 0, 0, 0, 0)
                 self.pl_hist.loc[date, ['crypto', 'wap', 'rpl', 'position', 'market']] = (
-                    ticker, price, 0, new_shares, market)
+                    ticker, price, 0, shares, market)
                 db.pl_insert(self.pl, ticker)
                 db.pl_hist_insert(self.pl_hist, date)
                 db.pl_update(self.pl, 'cash')
@@ -385,6 +385,12 @@ class PL:
         
         final_df.columns = cols
         self.pl_view = final_df
+        
+    def pl_tickers(self):
+        tickers = self.pl.index.values
+        tickers = tickers[tickers != 'cash']
+        return tickers
+            
 
 class UserDB:
     def __init__(self):
