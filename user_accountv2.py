@@ -49,7 +49,7 @@ class User:
                 date = datetime.now ()
                 trans = (cash - total,  ticker, -total, price, shares, tran_type)
                 pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares, 
-                           date.strftime('%y%m%d%H%M%S'))
+                           date.strftime('%Y%m%d%H%M%S%f'))
                 blotter.eval_blotter(db, date, trans)
                 self.message = "Success"
                 
@@ -75,7 +75,7 @@ class User:
                date = datetime.now ()
                trans = (cash + total,  ticker, total, price, shares, tran_type)
                pl.eval_pl(tran_type, shares, price, ticker, total, db, new, prev_shares, 
-                          date.strftime('%Y%m%d%H%M%S'))
+                          date.strftime('%Y%m%d%H%M%S%f'))
                blotter.eval_blotter(db, date, trans)
                self.message = "Success"
     
@@ -90,7 +90,7 @@ class User:
         
         #reset blotter
         blotter.blotter_rows = 0
-        blotter.blotter = pd.DataFrame(columns = [ "cash_balance", "currency", "net", "price",
+        blotter.blotter = pd.DataFrame(columns = [ "cash_balance", "ticker", "net", "price",
          "shares", "tran_type"])
     
         #reset pl
@@ -116,7 +116,7 @@ class Blotter:
         
         if db.new_account == 1:
             self.blotter_rows = 0
-            self.blotter = pd.DataFrame(columns = [ "cash_balance", "currency", "net", "price",
+            self.blotter = pd.DataFrame(columns = [ "cash_balance", "ticker", "net", "price",
                                  "shares", "tran_type"])
     
         else:
@@ -138,7 +138,7 @@ class Blotter:
                 self.blotter.set_index('date', inplace=True)
 
             else:#new blotter with no rows
-                self.blotter = pd.DataFrame(columns = [ "cash_balance", "currency", "net", "price",
+                self.blotter = pd.DataFrame(columns = [ "cash_balance", "ticker", "net", "price",
                                  "shares", "tran_type"])
                 
     def showBlotter(self, user):
@@ -163,7 +163,7 @@ class Blotter:
             dates = df.index
             df['Transaction Date'] = dates
             
-            df = df[['Transaction Date', "currency", "price", "shares", "tran_type", "net", "cash_balance"]]
+            df = df[['Transaction Date', "ticker", "price", "shares", "tran_type", "net", "cash_balance"]]
             to_string = lambda x: '{:,.8f}'.format(x).rstrip('0').rstrip('.')
             df['shares'] = df['shares'].map(to_string)
             labels = ["Transaction Date", "Currency", "Price", "Shares Traded", "Transaction Type",
@@ -188,7 +188,7 @@ class PL:
             self.pl = pd.DataFrame.from_dict(start, orient = 'index')
             db.pl_insert(self.pl, 'cash')
             
-            self.pl_hist = pd.DataFrame(columns = ['crypto', 'wap', 'rpl', 'position', 'market'])           
+            self.pl_hist = pd.DataFrame(columns = ['ticker', 'wap', 'rpl', 'position', 'upl', 'tpl'])           
             
         else: #recreate pl from last session
             pl_recs = db.db.pl.find({})
@@ -207,10 +207,10 @@ class PL:
                             pl_hist[key] = rec[key]
 
                 self.pl_hist = pd.DataFrame.from_dict(pl_hist, orient = 'index')
-                print(self.pl_hist)
 
             else:
-                self.pl_hist = pd.DataFrame(columns = ['crypto', 'wap', 'rpl', 'position', 'market']) 
+                self.pl_hist = pd.DataFrame(columns = ['ticker', 'wap', 'rpl', 'position', 'upl', 'tpl']) 
+                
     def check_margin(self):
         from get_currency_info import get_current
         
@@ -219,6 +219,35 @@ class PL:
             if self.pl.loc[currency, "position"] < 0:
                 margin += self.pl.loc[currency, "position"] * get_current(currency, "buy") * -1
         return margin
+    
+    def calc_tpl(self, ticker, date, shares, wap, market, gain):
+        import numpy as np
+        from datetime import timedelta, datetime
+        
+        num_date = datetime.strptime(date, '%Y%m%d%H%M%S%f')
+        up_to = datetime.strftime(num_date - timedelta(seconds = 1), '%Y%m%d%H%M%S%f')
+        market_now = shares * (market - wap)
+        
+        try:
+            last_same = self.pl_hist.loc[self.pl_hist['ticker'] == ticker].loc[:up_to].index.max()
+            last_market = self.pl_hist.loc[last_same, 'upl']
+            if np.isnan(last_market):
+                last_market = 0
+        except TypeError:
+            last_market = 0
+            
+        self.pl_hist.loc[date, 'upl'] = market_now
+        tpl_delta = market_now - last_market + gain
+        try:
+            last_all = self.pl_hist.loc[:up_to].index.max()
+            last_tpl = self.pl_hist.loc[last_all, 'tpl']
+            if np.isnan(last_tpl):
+                last_tpl = 0
+            self.pl_hist.loc[date, 'tpl'] = last_tpl + tpl_delta
+        except TypeError:
+            self.pl_hist.loc[date, 'tpl'] = tpl_delta
+            
+            
     
     def eval_pl(self, tran_type, shares, price, ticker, total, db, new, prev_shares, date):
         #only certain columns that form the "base" data are calculated here.  
@@ -238,20 +267,24 @@ class PL:
                     
                     if self.pl.loc[ticker, "position"] == 0:
                         self.pl.loc[ticker, 'wap'] = price
-                        self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = (
-                                ticker, price, new_shares, market)
+                        self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = (
+                                ticker, price, new_shares)
+                        self.calc_tpl(ticker, date, new_shares, price, market, 0)
             
                     else:
                         prev_value = prev_shares * self.pl.loc[ticker, "wap"]
-                        self.pl.loc[ticker, 'wap'] = (prev_value + shares * price)/new_shares
-                        self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = (ticker, new_shares,
-                                        (prev_value + shares * price)/new_shares, market)
+                        wap = (prev_value + shares * price)/new_shares
+                        self.pl.loc[ticker, 'wap'] = wap
+                        self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = (ticker, new_shares, wap)
+                        self.calc_tpl(ticker, date, new_shares, wap, market, 0)
                         
                 else:#Cover
                     gain = self.pl.loc[ticker, "wap"] * shares - total
-                    self.pl.loc[ticker, "rpl"]  = self.pl.loc[ticker, "rpl"] + gain
-                    self.pl_hist.loc[date, ['crypto', 'rpl', 'position', 'market']]  = (
-                        'ticker', self.pl.loc[ticker, "rpl"] + gain, new_shares, market)
+                    rpl = self.pl.loc[ticker, "rpl"] + gain
+                    self.pl.loc[ticker, "rpl"] = rpl
+                    self.pl_hist.loc[date, ['ticker', 'rpl', 'position']]  = (
+                        ticker, rpl, new_shares)
+                    self.calc_tpl(ticker, date, new_shares, self.pl.loc[ticker, 'wap'], market, gain)
                     
                     
                 #both    
@@ -265,8 +298,9 @@ class PL:
             else:#new currencies
                 self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                      'allocation_by_dollars', 'allocation_by_shares']] = (shares, 0, price, 0, 0, 0, 0, 0)
-                self.pl_hist.loc[date, ['crypto', 'wap', 'rpl', 'position', 'market']] = (
-                    ticker, price, 0, shares, market)
+                self.pl_hist.loc[date, ['ticker', 'wap', 'rpl', 'position']] = (
+                    ticker, price, 0, shares)
+                self.calc_tpl(ticker, date, shares, price, market, 0)
                 db.pl_insert(self.pl, ticker)
                 db.pl_hist_insert(self.pl_hist, date)
                 db.pl_update(self.pl, 'cash')
@@ -278,10 +312,11 @@ class PL:
                new_shares = self.pl.loc[ticker,'position'] - shares
                
                if tran_type == "sell":
-                   gain = total -  self.pl.loc[ticker, 'wap'] * shares
+                   wap = self.pl.loc[ticker, 'wap']
+                   gain = total -  wap * shares
                    self.pl.loc[ticker, 'rpl']  = self.pl.loc[ticker, "rpl"] + gain
-                   self.pl_hist.loc[date, ['rpl', 'crypto', 'position', 'market']]  = (
-                       self.pl.loc[ticker, "rpl"] + gain, ticker, new_shares, market)
+                   self.pl_hist.loc[date, ['rpl', 'ticker', 'position']]  = (gain, ticker, new_shares)
+                   self.calc_tpl(ticker, date, new_shares, wap, market, gain)
                    
                else:#short
 
@@ -291,9 +326,11 @@ class PL:
                        
                    else:
                        prev_value = prev_shares * self.pl.loc[ticker, "wap"]*-1
-                       self.pl.loc[ticker, "wap"] = (prev_value + shares * price)/new_shares*-1
-                       self.pl_hist.loc[date, ['crypto', 'wap', 'position', 'market']] = ( 
-                           ticker, (prev_value + shares * price)/new_shares*-1, new_shares, market)
+                       wap = (prev_value + shares * price)/new_shares*-1
+                       self.pl.loc[ticker, "wap"] = wap
+                       self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = ( 
+                           ticker, (prev_value + shares * price)/new_shares*-1, new_shares)
+                       self.calc_tpl(ticker, date, new_shares, wap, market, 0)
                #both
                self.pl.loc[ticker, "position"] = new_shares
                if new_shares == 0:
@@ -306,7 +343,9 @@ class PL:
            else:#new currencies
                self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                  'allocation_by_dollars', 'allocation_by_shares']] = (-shares, 0, price, 0, 0, -shares*price, 0, 0)
-               self.pl_hist.loc[date, ['crytpo', 'wap', 'rpl', 'position', 'market']] = (ticker, price, 0, shares, market)
+               self.pl_hist.loc[date, ['crytpo', 'wap', 'rpl', 'position']] = (
+                       ticker, price, 0, shares)
+               self.calc_tpl(ticker, date, shares, price, market, 0)
                db.pl_insert(self.pl, ticker)
                db.pl_hist_insert(self.pl_hist, date)
                db.pl_update(self.pl, 'cash')
@@ -317,7 +356,8 @@ class PL:
     def showPL(self, user):
         import numpy as np
         from get_currency_info import get_current
-        
+        from price_predictions import garch_predict, forest_predict
+        import pandas as pd
 
         #for showing PL in different currencies
         if user.currency != 'USDT':
@@ -329,40 +369,58 @@ class PL:
         final_df = self.pl.copy()[self.pl.index != 'cash']
         #create a dataframe from positions for easy calculated columns
         markets = []
+        garch_predictions = []
+        forest_predictions = []
         for position in final_df.index.values:
             market = get_current(position, 'check')
             markets.append(market)
+            if position in ('BTC', 'ETH'):
+                garch_predictions.append(garch_predict(position))
+                forest_predictions.append(forest_predict(position))
+            else:
+                garch_predictions.append(0)
+                forest_predictions.append(0)
         final_df["market"] = markets
+        final_df.loc[:, 'price_pred_garch'] = garch_predictions
+        final_df.loc[:, 'price_pred_forest'] = forest_predictions
         
         cash = self.pl.loc['cash', 'market'] * mult
         
         #additional columns calculated from "base" data
-        final_df.loc[:, "total_value"] = final_df.position * final_df.market
+        final_df['total_value'] = final_df.position * final_df.market
         final_df.loc[:, 'share_weight'] =  abs(final_df.position)/np.sum(abs(final_df.position))
         final_df.loc[:, 'value_weight'] = abs(final_df['total_value'])/np.sum(abs(final_df['total_value']))
-        final_df.loc[:, "upl"] = final_df.position * final_df.market - final_df.position * final_df.wap
-        final_df.loc[:, 'tpl'] = final_df.upl + final_df.rpl     
+        final_df['upl'] = final_df.position * final_df.market - final_df.position * final_df.wap
+        final_df['tpl'] = final_df.upl + final_df.rpl     
         
         final_df.fillna(0)
         final_df.replace(np.nan, 0, inplace=True)
         
+        #price predictions
+        #final_df['price_pred_garch'] = pd.Index(final_df.index[final_df.index in ['BTC', 'ETH']]).map(garch_predict)
+        #final_df['price_pred_forest'] = pd.Index(final_df.index[final_df.index in ['BTC', 'ETH']].map(forest_predict))
+        #final_df.loc[final_df['ticker'] == 'ETH', 'price_pred_forest'] = forest_predict('ETH')
+        #final_df.loc[final_df['ticker'] == 'BTC', 'price_pred_forest'] = forest_predict('BTC')
+        
+        
         currencies = final_df.index
         final_df['currency'] = currencies
         final_df = final_df[['currency', "position", "market", "total_value", 'value_weight', 'share_weight', 
-                             "wap", "upl", 'rpl',  "tpl"]]
+                             "wap", "upl", 'rpl',  "tpl", 'price_pred_garch', 'price_pred_forest']]
         
         final_df.loc[:, ['tpl', 'market', 'rpl', 'total_value', 'wap', 'upl']] *= mult
+        
         #total row
         val = cash + np.sum(final_df["total_value"])
         totals = ['Total', '', '',  val,'', '', '', np.sum(final_df["upl"]), np.sum(final_df["rpl"]),
-                  np.sum(final_df["tpl"])]
+                  np.sum(final_df["tpl"]),'','']
         #format total row
         for item in range(len(totals)):
             if type(totals[item]) is not str:
                 totals[item] = "${:,.2f}".format(totals[item]) 
                 
         totals = tuple(totals)
-        cash_row = ("Cash", '', '', "${:,.2f}".format(cash),'', '',  '', '','', '')
+        cash_row = ("Cash", '', '', "${:,.2f}".format(cash),'', '',  '', '','', '','','')
         space_row = tuple(['' for i in range(len(final_df.columns))])
         
         #format currency rows
@@ -380,7 +438,7 @@ class PL:
         final_df.loc[rows + 2] = totals
             
         cols = ['Currency', "Position", "Market Price", "Total Value", 'Value Weight', 'Share Weight',
-                "WAP", "UPL", "RPL", 'Total PL']
+                "WAP", "UPL", "RPL", 'Total PL','Price Prediction (GARCH)', 'Price Prediction (Random Forest)']
         
         
         final_df.columns = cols
@@ -424,7 +482,7 @@ class UserDB:
     def blotter_insert(self, date, row):
          from datetime import datetime
          
-         keys = [ "cash_balance", "currency", "net", "price",
+         keys = [ "cash_balance", "ticker", "net", "price",
                                  "shares", "tran_type", 'date']
          vals = list(row)
          since_date = datetime(1970, 1, 1, 0, 0, 0)

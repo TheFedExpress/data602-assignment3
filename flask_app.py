@@ -66,15 +66,53 @@ def pl():
 @app.route('/vwap')
 def show_vwap():
     from plotly.offline import plot
-    from charts import vwap
+    from charts import graph_cols
     
     ticker = request.args.get('ticker')
     
     if ticker != None:
-        data = vwap(my_pl.pl_hist, ticker)
+        data = graph_cols(my_pl.pl_hist, ticker, 'wap')
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'Ticker not found'
+    return render_template('graph.html', my_plot = my_plot)
+
+@app.route('/price')
+def show_price():
+    from plotly.offline import plot
+    from charts import graph_cols
+    
+    ticker = request.args.get('ticker')
+    
+    if ticker != None:
+        data = graph_cols(my_blotter.blotter, ticker, 'price')
+        my_plot = plot(data, output_type="div", show_link=False)
+    else:
+        my_plot = 'Ticker not found'
+    return render_template('graph.html', my_plot = my_plot)
+
+@app.route('/cash')
+def show_cash():
+    from plotly.offline import plot
+    from charts import graph_tots
+    
+    if my_blotter.blotter_rows > 0:
+        data = graph_tots(my_blotter.blotter, 'cash_balance', 'Cash Balance')
+        my_plot = plot(data, output_type="div", show_link=False)
+    else:
+        my_plot = 'No Trading History'
+    return render_template('graph.html', my_plot = my_plot)
+
+@app.route('/tpl')
+def show_tpl():
+    from plotly.offline import plot
+    from charts import graph_tots
+    
+    if my_blotter.blotter_rows > 0:
+        data = graph_tots(my_pl.pl_hist, 'tpl', 'Portfolio PL')
+        my_plot = plot(data, output_type="div", show_link=False)
+    else:
+        my_plot = 'No Trading History'
     return render_template('graph.html', my_plot = my_plot)
 
 @app.route("/trade")
