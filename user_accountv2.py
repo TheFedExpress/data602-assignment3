@@ -86,7 +86,6 @@ class User:
         db.db.pl_hist.delete_many({})
         db.db.blotter.delete_many({})
         db.db.cur.delete_many({})
-        db.currency_update('usdt')
         
         #reset blotter
         blotter.blotter_rows = 0
@@ -98,6 +97,7 @@ class User:
         "allocation_by_shares": 0.0, "allocation_by_dollars": 100.0}}
         pl.pl = pd.DataFrame.from_dict(start, orient = 'index')
         db.pl_insert(pl.pl, 'cash')
+        pl.pl_hist = pd.DataFrame(columns = ['ticker', 'wap', 'rpl', 'position', 'upl', 'tpl'])  
         
         
         #reset user
@@ -181,6 +181,10 @@ class PL:
     
     def __init__(self, user, db):
         import pandas as pd
+        from price_predictions import forest_train
+        
+        self.btc_forest = forest_train('btc')
+        self.eth_forest = forest_train('eth')
         
         if db.new_account == 1:
             start = {"cash": {"position": 0.0, "market": user.starting_cash, "wap" : 0.0, "rpl": 0.0, "upl": 0.0, 
@@ -219,6 +223,13 @@ class PL:
             if self.pl.loc[currency, "position"] < 0:
                 margin += self.pl.loc[currency, "position"] * get_current(currency, "buy") * -1
         return margin
+    
+    def calc_wap(self, prev_shares, shares, new_shares, price, sign, ticker):
+        prev_value = prev_shares * self.pl.loc[ticker, "wap"] * sign
+        wap = (prev_value + shares * price)/new_shares * sign
+
+        return wap
+        
     
     def calc_tpl(self, ticker, date, shares, wap, market, gain):
         import numpy as np
@@ -267,24 +278,26 @@ class PL:
                     
                     if self.pl.loc[ticker, "position"] == 0:
                         self.pl.loc[ticker, 'wap'] = price
-                        self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = (
-                                ticker, price, new_shares)
+                        self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl', 'market']] = (
+                                ticker, price, new_shares, 0, market)
                         self.calc_tpl(ticker, date, new_shares, price, market, 0)
             
                     else:
-                        prev_value = prev_shares * self.pl.loc[ticker, "wap"]
-                        wap = (prev_value + shares * price)/new_shares
+                        wap = self.calc_wap(prev_shares, shares, new_shares, price, 1, ticker)
                         self.pl.loc[ticker, 'wap'] = wap
-                        self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = (ticker, new_shares, wap)
+
+                        self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl']] = (
+                                ticker, wap, new_shares, 0)
                         self.calc_tpl(ticker, date, new_shares, wap, market, 0)
                         
                 else:#Cover
-                    gain = self.pl.loc[ticker, "wap"] * shares - total
+                    wap = self.pl.loc[ticker, "wap"]
+                    gain = wap * shares - total
                     rpl = self.pl.loc[ticker, "rpl"] + gain
                     self.pl.loc[ticker, "rpl"] = rpl
-                    self.pl_hist.loc[date, ['ticker', 'rpl', 'position']]  = (
-                        ticker, rpl, new_shares)
-                    self.calc_tpl(ticker, date, new_shares, self.pl.loc[ticker, 'wap'], market, gain)
+                    self.pl_hist.loc[date, ['ticker', 'rpl', 'position', 'rpl', 'wap']]  = (
+                        ticker, rpl, new_shares, wap)
+                    self.calc_tpl(ticker, date, new_shares, wap, market, gain)
                     
                     
                 #both    
@@ -315,7 +328,8 @@ class PL:
                    wap = self.pl.loc[ticker, 'wap']
                    gain = total -  wap * shares
                    self.pl.loc[ticker, 'rpl']  = self.pl.loc[ticker, "rpl"] + gain
-                   self.pl_hist.loc[date, ['rpl', 'ticker', 'position']]  = (gain, ticker, new_shares)
+                   self.pl_hist.loc[date, ['rpl', 'ticker', 'position', 'wap']]  = (
+                           gain, ticker, new_shares, wap)
                    self.calc_tpl(ticker, date, new_shares, wap, market, gain)
                    
                else:#short
@@ -325,11 +339,10 @@ class PL:
                        self.pl_hist.loc[date, ['crytpo', 'wap']] = (ticker, price)
                        
                    else:
-                       prev_value = prev_shares * self.pl.loc[ticker, "wap"]*-1
-                       wap = (prev_value + shares * price)/new_shares*-1
+                       self.calc_wap(prev_shares, shares, new_shares, price, -1, ticker)
                        self.pl.loc[ticker, "wap"] = wap
-                       self.pl_hist.loc[date, ['ticker', 'wap', 'position']] = ( 
-                           ticker, (prev_value + shares * price)/new_shares*-1, new_shares)
+                       self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl']] = ( 
+                           ticker, wap, new_shares, 0)
                        self.calc_tpl(ticker, date, new_shares, wap, market, 0)
                #both
                self.pl.loc[ticker, "position"] = new_shares
@@ -357,7 +370,6 @@ class PL:
         import numpy as np
         from get_currency_info import get_current
         from price_predictions import garch_predict, forest_predict
-        import pandas as pd
 
         #for showing PL in different currencies
         if user.currency != 'USDT':
@@ -367,7 +379,7 @@ class PL:
             mult = 1
             
         final_df = self.pl.copy()[self.pl.index != 'cash']
-        #create a dataframe from positions for easy calculated columns
+        #isolate the actual currencies from cash
         markets = []
         garch_predictions = []
         forest_predictions = []
@@ -376,10 +388,14 @@ class PL:
             markets.append(market)
             if position in ('BTC', 'ETH'):
                 garch_predictions.append(garch_predict(position))
-                forest_predictions.append(forest_predict(position))
+                if position == 'ETH':
+                    forest_predictions.append(forest_predict(self.eth_forest, position))
+                else:
+                    forest_predictions.append(forest_predict(self.btc_forest, position))
             else:
                 garch_predictions.append(0)
                 forest_predictions.append(0)
+                
         final_df["market"] = markets
         final_df.loc[:, 'price_pred_garch'] = garch_predictions
         final_df.loc[:, 'price_pred_forest'] = forest_predictions
@@ -427,7 +443,7 @@ class PL:
         for item in ["market", "total_value", "wap", "upl", "rpl", 'tpl']:
             final_df[item] = final_df[item].map('${:,.2f}'.format)
         for item in ['value_weight', 'share_weight']:
-            final_df[item] = (final_df[item]*100).map('{:,.1f}%'.format)
+            final_df[item] = (final_df[item]*100).map('{:.1f}%'.format)
         to_string = lambda x: '{:,.8f}'.format(x).rstrip('0').rstrip('.')
         final_df['position'] = final_df['position'].map(to_string)
             
@@ -459,9 +475,16 @@ class UserDB:
         
         if self.db.pl.count() > 0:
             self.new_account = 0
-        else:
+        else:#
             self.new_account = 1
-            self.db.cur.insert_one({'currency' : 'USDT'})
+            #Count should always be 0, but the app is getting more complex and it's better
+            #to be paranoid than sorry
+            if self.db.cur.count() == 0:
+                self.db.cur.insert_one({'currency' : 'USDT'})
+            else:
+                self.db.cur.delete_many({})
+                self.db.cur.insert_one({'currency' : 'USDT'})
+            
         
         
     def pl_insert(self, df, ticker):

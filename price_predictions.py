@@ -9,7 +9,7 @@ def prepare_returns(ticker):
     import numpy as np
     from get_currency_info import get_history
     
-    df = get_history(ticker, 2000)
+    df = get_history(ticker, 2000, 'Kraken')
     df.loc[:, 'log_ret'] = np.log(df.close) - np.log(df.close.shift(1))
     df = df.loc['01-01-2016':]
     df.dropna(inplace = True)
@@ -26,16 +26,15 @@ def garch_predict(ticker):
         
     am = arch_model(returns, p=1, o=0, q=1, dist='StudentsT')
     res = am.fit(update_freq=5, disp='off')
-    
-    change = res.forecast(horizon=1).mean.iloc[-1,0]
+
+    change = res.predict(horizon=1).mean.iloc[-1,0]
     
     forecast = get_current(ticker, 'check')*(1 + change)
     return '${:,.2f}'.format(forecast)
 
-def forest_predict(prim_ticker):
-    from get_currency_info import get_current
+def forest_prep(prim_ticker):
     import numpy as np
-    from sklearn.ensemble import RandomForestRegressor
+    
     
     if prim_ticker == 'BTC':
         sec_ticker = 'ETH'
@@ -44,30 +43,20 @@ def forest_predict(prim_ticker):
     prim = prepare_returns(prim_ticker)[['close']]
     sec = prepare_returns(sec_ticker)[['close']]
     
-#    prim = sm.add_constant(eth)
-#   result = sm.OLS(sec,prim).fit()
-    
-#    b = result.params[1]
-#    adf_stats = adfuller(btc['close'] - b*eth['close'])
-#    print("The p-value for the ADF test is ", adf_stats[1])
     
     df = prepare_returns(prim_ticker)
     
     df.loc[:, 'diff'] = prim - sec
     
+    for i in range(1,6):
+        df.loc[:, 'log_ret{}'.format(i)] = np.log(df.close) - np.log(df.close.shift(i))
     
-    
-    df.loc[:, 'log_ret'] = np.log(df.close) - np.log(df.close.shift(1))
-    df.loc[:, 'log_ret2'] = np.log(df.close) - np.log(df.close.shift(2))
-    df.loc[:, 'log_ret3'] = np.log(df.close) - np.log(df.close.shift(3))
-    df.loc[:, 'log_ret4'] = np.log(df.close) - np.log(df.close.shift(4))
-    df.loc[:, 'log_ret5'] = np.log(df.close) - np.log(df.close.shift(5))
-    df[['prev2', 'prev3', 'prev4', 'prev5']] = df.shift(1).loc[:, ['log_ret2', 'log_ret3', 'log_ret4', 'log_ret5']]
+    df[['prev{}'.format(i) for i in range(1,6)]] = df.shift(1).loc[:, ['log_ret{}'.format(i) for i in range(1,6)]]
     
     df.dropna(inplace = True)
     
-    for i in range(1,5):
-        df[['prev_ret{}'.format(i)]] = df.shift(i).loc[:,['log_ret']]
+    for i in range(1,5):#for the streak
+        df[['prev_ret{}'.format(i)]] = df.shift(i).loc[:,['log_ret1']]
     
     df = df.dropna()
     
@@ -85,15 +74,25 @@ def forest_predict(prim_ticker):
         return streak
     
     df['streak'] = df.apply(calc_streak, axis = 1)        
-    X = df[['prev_ret1', 'prev2', 'prev3', 'prev4', 'prev5', 'diff', 'streak']]
+    X = df[['prev1', 'prev2', 'prev3', 'prev4', 'prev5', 'diff', 'streak']]
     
     y = df['log_ret']
+    
+    return X, y
+    
+def forest_train(ticker):
+    from sklearn.ensemble import RandomForestRegressor
+    
+    X,y = forest_prep(ticker)
     rf = RandomForestRegressor(min_samples_leaf = 5, min_samples_split = 10, n_estimators = 100)
     rf.fit(X, y.values.ravel())
-        
-    pred = rf.predict(X.iloc[-1:, :].values.reshape(1,-1))
-    forecast = get_current(prim_ticker, 'check')*(1 + pred[0])
+    return rf
+
+def forest_predict(model, ticker):
+    from get_currency_info import get_current
+    
+    X,y = forest_prep(ticker)
+    
+    pred = model.predict(X.iloc[-1:, :].values.reshape(1,-1))
+    forecast = get_current(ticker, 'check')*(1 + pred[0])
     return '${:,.2f}'.format(forecast)
-then = time.time()
-garch_predict('btc')
-print (time.time() - then)

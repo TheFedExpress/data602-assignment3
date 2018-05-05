@@ -105,7 +105,37 @@
     }
 
 
+      function optimizeSelection()
+    {
+        var req = new XMLHttpRequest()
+        req.onreadystatechange = function()
+        {
+            if (req.readyState == 4)
+            {
+                if (req.status == 200){
+                    var response = req.responseText
+                    document.getElementById('allocations').innerHTML = response
+                }
+            }
+	}
+    
+    	var inputs = document.getElementsByName("optimize")
+	var checked_tickers = []
+	for(var i = 0; i < inputs.length; i++) {
+    		if(inputs[i].checked == true) {
+        		checked_tickers.push(inputs[i].value)
+   		}  
+	}
+	req.open('POST', '/optimize')
+        req.setRequestHeader("Content-type", "application/x-www-form-urlencoded")
+        var postVars = 'tickers=' + checked_tickers
+        req.send(postVars)
+        
+        return false
+    }
+
 </script>
+
 <style>
 div{
 	font-family: arial, sans-serif;
@@ -123,6 +153,31 @@ div{
 	width:290px;
     float:left;
 }
+.optimize{
+	float:right
+}
+
+table {
+    font-family: arial, sans-serif;
+    border-collapse: collapse;
+    width: 100%;
+}
+
+td {
+    border: 1px solid #aaaaaa;
+    text-align: left;
+    padding: 8px;
+}
+tr:nth-child(even) {
+    background-color: #dddddd;
+}
+th{
+    border: 2px solid #aaaaaa;
+    text-align: center;
+    padding: 12px;
+    font-weight: bold;	
+}
+
 a {
   font: bold 11px Arial;
   font-size: 120%;
@@ -170,7 +225,23 @@ a {
     <b>Min: <span id = 'min'></span></b><br>
     <b>Max: <span id = 'max'></span></b><br>
     <b>Stdev: <span id = 'stdev'></span></b><br>
-   </div>
+</div>
+
+<div class = 'optimize'>
+	<fieldset style = 'width:300px'>
+		<legend>Optimize</legend>
+		<h3>Find an Optimal Allocation</h3><br><br>
+		{% for item in opt_list %}
+			{{item | safe}}
+		{% endfor %}
+		<br>
+		<button name = 'opt_button' onclick = "return optimizeSelection()">Show Allocation</button><br>
+	</fieldset>
+	<br>
+	<br>
+	<div id = 'allocations'>
+	</div>
+</div>
 
 <br>
 <br>

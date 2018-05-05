@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Apr 17 15:40:24 2018
-
 @author: Peter_goodridge
 """
 
@@ -23,19 +22,26 @@ def get_current(ticker, trade_type):
     elif trade_type == 'check':
         return(last)
         
-def get_history(ticker, days):
+def get_history(ticker, days, exchange = ''):
     import requests
     import pandas as pd
     from datetime import datetime
     
     ticker = ticker.upper()
-    url = 'https://min-api.cryptocompare.com/data/histoday?fsym={}&tsym=USDT&limit={}&aggregate=1'.format(ticker, days)
+    
+    if exchange != '':
+       exchange =  '&e=' + exchange
+    
+    url = 'https://min-api.cryptocompare.com/data/histoday?fsym={}&tsym=USD&limit={}&aggregate=1{}'.format(
+            ticker, days, exchange)
     response = requests.get(url)
     obj = response.json()['Data']
     
     df = pd.DataFrame(obj, columns = ['time', 'close', 'high', 'low', 'open', 'volumefrom', 'volumeto'])
     df['time'] = df['time'].map(lambda x: datetime.fromtimestamp(x))
+    df = df[df['close'] != 0]
     df.sort_values(by = ['time'], inplace = True)
+    df.set_index('time', inplace = True)
     return df
 
 def get_sd(ticker, days):
@@ -46,13 +52,12 @@ def get_sd(ticker, days):
     end = datetime.now()
     
     start = (end.date() - timedelta(days = days))
-    
     url = 'https://api.gdax.com/products/BTC-USD/candles?start={}&end={}&granularity=86400'.format(start,end)
+    print (url)
     obj = requests.get(url).json()
     print(obj)
     df = pd.DataFrame(obj, columns = ['time', 'low', 'high', 'open', 'close', 'volume'])
     return df
-df = get_sd('btc', 500)
 
 def get_24(ticker):
     import requests
@@ -71,9 +76,8 @@ def get_24(ticker):
 
 def make_chart(ticker):
     from plotly.graph_objs import Scatter, Data, Line
-    from plotly.offline import plot    
     import requests
-    from datetime import datetime, timedelta
+    from datetime import datetime
     import pandas as pd
     
     ticker = ticker.upper()

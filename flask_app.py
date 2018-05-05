@@ -71,7 +71,7 @@ def show_vwap():
     ticker = request.args.get('ticker')
     
     if ticker != None:
-        data = graph_cols(my_pl.pl_hist, ticker, 'wap')
+        data = graph_cols(my_pl.pl_hist, ticker, 'wap', 'VWAP History')
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'Ticker not found'
@@ -85,7 +85,7 @@ def show_price():
     ticker = request.args.get('ticker')
     
     if ticker != None:
-        data = graph_cols(my_blotter.blotter, ticker, 'price')
+        data = graph_cols(my_blotter.blotter, ticker, 'price', 'Purchase Price History')
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'Ticker not found'
@@ -119,7 +119,15 @@ def show_tpl():
 def trade():
     from get_currency_info import find_actives
     ticker_list = ['<option value="{}"></option>'.format(ticker) for ticker in find_actives()]
-    return render_template('trade.html', ticker_list = ticker_list)
+    
+    
+    #all currencies that didn't cause problems with algorith
+    good_list = ['BTC', 'DASH', 'ETH', 'LTC', 'NXT', 'SC', 'XMR', 'XRP']
+    
+    cb_string = '<input type = "checkbox" name = "optimize" value="{0}">{0}<br>'
+    opt_list = [cb_string.format(ticker) for ticker in good_list]
+        
+    return render_template('trade.html', ticker_list = ticker_list, opt_list = opt_list)
 
 
 @app.route('/graph')
@@ -197,9 +205,17 @@ def executeTrade():
             return jsonify(message = 'Problem with order size or ticker') 
             
     else:
-        return(jsonify(message = 'Ticker not found'))
+        return (jsonify(message = 'Ticker not found'))
         
-
+@app.route ('/optimize', methods = ['POST'])
+def optimize_portfolio():
+    from optimize import prepare_opt
+    
+    tickers = request.form['tickers'].split(',')
+    
+    df = prepare_opt(tickers)
+    df_html = Markup(df.to_html(index = False))
+    return df_html
         
 if __name__ == "__main__":
     app.run(host = '0.0.0.0')

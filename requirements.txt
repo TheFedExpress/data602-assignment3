@@ -1,0 +1,8 @@
+pandas 
+numpy
+pymongo
+plotly
+Flask
+git+https://github.com/bashtage/arch.git
+scipy
+sklearn
