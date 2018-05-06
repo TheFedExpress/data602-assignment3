@@ -52,7 +52,6 @@ class User:
                            date.strftime('%Y%m%d%H%M%S%f'))
                 blotter.eval_blotter(db, date, trans)
                 self.message = "Success"
-                
        else:
             if tran_type == "short":
                 margin = pl.check_margin()
@@ -107,6 +106,15 @@ class User:
     def change_currency(self, ticker, db):
         self.currency = ticker
         db.currency_update(ticker)
+        
+    def get_mult(self):
+        from get_currency_info import get_current
+        
+        if self.currency != 'USDT':
+            cur = get_current(self.currency, 'check')
+        else:
+            cur = 1
+        return 1/cur
 
 class Blotter:
     
@@ -136,6 +144,8 @@ class Blotter:
                     blotter_list.append(record_dict)
                 self.blotter = pd.DataFrame(blotter_list)
                 self.blotter.set_index('date', inplace=True)
+                self.blotter = self.blotter[[ "cash_balance", "ticker", "net", "price",
+                                 "shares", "tran_type"]]
 
             else:#new blotter with no rows
                 self.blotter = pd.DataFrame(columns = [ "cash_balance", "ticker", "net", "price",
@@ -145,15 +155,8 @@ class Blotter:
         from get_currency_info import get_current
              
         if self.blotter_rows > 0:
-            if user.currency != 'USDT':
-                cur = get_current(user.currency, 'check')
-                mult = 1/cur
-                #Going from dollars to the currency, intead of directly to from currency
-                #to prevents the problem of certain currencies pairs not trading.
-                #It also makes the program neater for such a minor difference, since this is
-                #only for display purposes.
-            else:
-                mult = 1
+
+            mult = user.get_mult()
             #prepare for display
             df = self.blotter.copy()
             df.loc[:, ['price', 'net', 'cash_balance']] *= mult
@@ -173,6 +176,7 @@ class Blotter:
             
     def eval_blotter(self, db, date, trans):
            self.blotter.loc[date] = trans
+           print(self.blotter)
            db.blotter_insert(date, trans)
            self.blotter_rows += 1
 
@@ -372,11 +376,7 @@ class PL:
         from price_predictions import garch_predict, forest_predict
 
         #for showing PL in different currencies
-        if user.currency != 'USDT':
-            cur = get_current(user.currency, 'check')
-            mult = 1/cur
-        else:
-            mult = 1
+        mult = user.get_mult()
             
         final_df = self.pl.copy()[self.pl.index != 'cash']
         #isolate the actual currencies from cash
@@ -387,11 +387,11 @@ class PL:
             market = get_current(position, 'check')
             markets.append(market)
             if position in ('BTC', 'ETH'):
-                garch_predictions.append(garch_predict(position))
+                garch_predictions.append(garch_predict(position, user))
                 if position == 'ETH':
-                    forest_predictions.append(forest_predict(self.eth_forest, position))
+                    forest_predictions.append(forest_predict(self.eth_forest, position, user))
                 else:
-                    forest_predictions.append(forest_predict(self.btc_forest, position))
+                    forest_predictions.append(forest_predict(self.btc_forest, position, user))
             else:
                 garch_predictions.append(0)
                 forest_predictions.append(0)

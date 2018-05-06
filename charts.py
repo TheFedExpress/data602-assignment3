@@ -9,12 +9,12 @@ def tpl(df):
     df['upl'] = df.market*df.position - df.vwap*df.position
     df['tpl'] + df.upl + df.rpl
 
-def graph_cols(df, tick, column, title):
+def graph_cols(df, tick, column, title, user):
     import pandas as pd
     from plotly.graph_objs import Scatter, Data, Line, Figure
     
     
-    df = df[df['ticker'] == tick][column]
+    df = df[df['ticker'] == tick][column] * user.get_mult()
     dates = pd.to_datetime(df.index, format = '%Y%m%d%H%M%S%f')
     
     price = Scatter(x= dates, y = df, line = Line(width = 2, color = 'blue'), name = tick)
@@ -25,11 +25,11 @@ def graph_cols(df, tick, column, title):
     
     return fig
 
-def graph_tots(df, column, column_name):
+def graph_tots(df, column, column_name, user):
     import pandas as pd
     from plotly.graph_objs import Scatter, Data, Line, Figure
     
-    df = df[column]
+    df = df[column] * user.get_mult()
     dates = pd.to_datetime(df.index, format = '%Y%m%d%H%M%S%f')
     
     price = Scatter(x= dates, y = df, line = Line(width = 2, color = 'blue'), name = column_name)

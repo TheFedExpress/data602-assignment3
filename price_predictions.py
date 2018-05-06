@@ -17,19 +17,19 @@ def prepare_returns(ticker):
 
     return df
 
-def garch_predict(ticker):
+def garch_predict(ticker, user):
 
     from arch import arch_model
     from get_currency_info import get_current
     
-    returns = prepare_returns(ticker)['log_ret']
+    returns = prepare_returns(ticker)['log_ret']*10 #to prevent underflow
         
     am = arch_model(returns, p=1, o=0, q=1, dist='StudentsT')
     res = am.fit(update_freq=5, disp='off')
 
-    change = res.predict(horizon=1).mean.iloc[-1,0]
+    change = res.forecast(horizon=1).mean.iloc[-1,0]/10
     
-    forecast = get_current(ticker, 'check')*(1 + change)
+    forecast = get_current(ticker, 'check')*(1 + change)*user.get_mult()
     return '${:,.2f}'.format(forecast)
 
 def forest_prep(prim_ticker):
@@ -88,11 +88,11 @@ def forest_train(ticker):
     rf.fit(X, y.values.ravel())
     return rf
 
-def forest_predict(model, ticker):
+def forest_predict(model, ticker, user):
     from get_currency_info import get_current
     
     X,y = forest_prep(ticker)
     
     pred = model.predict(X.iloc[-1:, :].values.reshape(1,-1))
-    forecast = get_current(ticker, 'check')*(1 + pred[0])
+    forecast = get_current(ticker, 'check')*(1 + pred[0])*user.get_mult()
     return '${:,.2f}'.format(forecast)
