@@ -3,8 +3,8 @@ numpy
 pymongo
 plotly
 Flask
-scipy
 Cython
+scipy
 sklearn
 git+https://github.com/bashtage/arch.git
 
