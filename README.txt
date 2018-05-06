@@ -29,8 +29,8 @@ New Features
 To help the user make better trade decisions, we have added several new features:
 
 1. In the trading page, there is now a portfolio allocation optimizer.  The user must choose the currencies they wish to run through the algorithm, then the optimizer returns its weights
-2. There are now price predictions in the P&L table.  Right now, the machine learning is only optimized for predicting Ethereum and Bitcoin, so these are the only currencies that will have a prediction populated.  
-3. The user can now graph metrics related to the performance of their portflio.  
+2. There are now price predictions in the P&L table.  This is the prediction for where the price will be 24 hours from now.  Right now, the machine learning is only optimized for predicting Ethereum and Bitcoin, so these are the only currencies that will have a prediction populated.  
+3. The user can now graph metrics related to the performance of their portflio.
 
 **Notes** 
 
