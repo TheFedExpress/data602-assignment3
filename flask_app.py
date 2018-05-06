@@ -58,7 +58,7 @@ def blotter():
 
 @app.route("/pl")
 def pl():
-    my_pl.showPL(account)
+    my_pl.showPL(account, my_db)
     all_tickers = my_pl.pl_tickers()
     ticker_list = ['<option value="{}"></option>'.format(ticker) for ticker in all_tickers]
     return render_template('pl.html', table = my_pl.pl_view.to_html(index = False), 

@@ -18,6 +18,7 @@ class User:
     #This would also require two lines on the P/L, causing confusion
     def evalTransaction(self, tran_type, shares, price, ticker, db, pl, blotter):
        from datetime import datetime
+       
        cash = pl.pl.loc['cash', 'market']
        total = shares * price
        
@@ -235,13 +236,13 @@ class PL:
         return wap
         
     
-    def calc_tpl(self, ticker, date, shares, wap, market, gain):
+    def calc_tpl(self, ticker, date, shares, wap, market, gain, sign):
         import numpy as np
         from datetime import timedelta, datetime
         
         num_date = datetime.strptime(date, '%Y%m%d%H%M%S%f')
         up_to = datetime.strftime(num_date - timedelta(seconds = 1), '%Y%m%d%H%M%S%f')
-        market_now = shares * (market - wap)
+        market_now = shares * (market - wap) * sign
         
         try:
             last_same = self.pl_hist.loc[self.pl_hist['ticker'] == ticker].loc[:up_to].index.max()
@@ -284,7 +285,7 @@ class PL:
                         self.pl.loc[ticker, 'wap'] = price
                         self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl', 'market']] = (
                                 ticker, price, new_shares, 0, market)
-                        self.calc_tpl(ticker, date, new_shares, price, market, 0)
+                        self.calc_tpl(ticker, date, new_shares, price, market, 0, 1)
             
                     else:
                         wap = self.calc_wap(prev_shares, shares, new_shares, price, 1, ticker)
@@ -292,7 +293,7 @@ class PL:
 
                         self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl']] = (
                                 ticker, wap, new_shares, 0)
-                        self.calc_tpl(ticker, date, new_shares, wap, market, 0)
+                        self.calc_tpl(ticker, date, new_shares, wap, market, 0, 1)
                         
                 else:#Cover
                     wap = self.pl.loc[ticker, "wap"]
@@ -301,7 +302,7 @@ class PL:
                     self.pl.loc[ticker, "rpl"] = rpl
                     self.pl_hist.loc[date, ['ticker', 'rpl', 'position', 'rpl', 'wap']]  = (
                         ticker, rpl, new_shares, wap)
-                    self.calc_tpl(ticker, date, new_shares, wap, market, gain)
+                    self.calc_tpl(ticker, date, new_shares, wap, market, gain , -1)
                     
                     
                 #both    
@@ -317,7 +318,7 @@ class PL:
                      'allocation_by_dollars', 'allocation_by_shares']] = (shares, 0, price, 0, 0, 0, 0, 0)
                 self.pl_hist.loc[date, ['ticker', 'wap', 'rpl', 'position']] = (
                     ticker, price, 0, shares)
-                self.calc_tpl(ticker, date, shares, price, market, 0)
+                self.calc_tpl(ticker, date, shares, price, market, 0, 1)
                 db.pl_insert(self.pl, ticker)
                 db.pl_hist_insert(self.pl_hist, date)
                 db.pl_update(self.pl, 'cash')
@@ -334,20 +335,20 @@ class PL:
                    self.pl.loc[ticker, 'rpl']  = self.pl.loc[ticker, "rpl"] + gain
                    self.pl_hist.loc[date, ['rpl', 'ticker', 'position', 'wap']]  = (
                            gain, ticker, new_shares, wap)
-                   self.calc_tpl(ticker, date, new_shares, wap, market, gain)
+                   self.calc_tpl(ticker, date, new_shares, wap, market, gain, 1)
                    
                else:#short
 
                    if self.pl.loc[ticker, 'position'] == 0:
                        self.pl.loc[ticker, "wap"] = price
-                       self.pl_hist.loc[date, ['crytpo', 'wap']] = (ticker, price)
+                       self.pl_hist.loc[date, ['ticker', 'wap']] = (ticker, price)
                        
                    else:
                        self.calc_wap(prev_shares, shares, new_shares, price, -1, ticker)
                        self.pl.loc[ticker, "wap"] = wap
                        self.pl_hist.loc[date, ['ticker', 'wap', 'position', 'rpl']] = ( 
                            ticker, wap, new_shares, 0)
-                       self.calc_tpl(ticker, date, new_shares, wap, market, 0)
+                       self.calc_tpl(ticker, date, new_shares, wap, market, 0, -1)
                #both
                self.pl.loc[ticker, "position"] = new_shares
                if new_shares == 0:
@@ -360,20 +361,19 @@ class PL:
            else:#new currencies
                self.pl.loc[ticker, ['position', 'market', 'wap', 'rpl', 'upl', 'tpl', 
                  'allocation_by_dollars', 'allocation_by_shares']] = (-shares, 0, price, 0, 0, -shares*price, 0, 0)
-               self.pl_hist.loc[date, ['crytpo', 'wap', 'rpl', 'position']] = (
+               self.pl_hist.loc[date, ['ticker', 'wap', 'rpl', 'position']] = (
                        ticker, price, 0, shares)
-               self.calc_tpl(ticker, date, shares, price, market, 0)
+               self.calc_tpl(ticker, date, shares, price, market, 0, -1)
                db.pl_insert(self.pl, ticker)
                db.pl_hist_insert(self.pl_hist, date)
                db.pl_update(self.pl, 'cash')
 
-
-
            
-    def showPL(self, user):
+    def showPL(self, user, db):
         import numpy as np
         from get_currency_info import get_current
         from price_predictions import garch_predict, forest_predict
+        from datetime import datetime
 
         #for showing PL in different currencies
         mult = user.get_mult()
@@ -409,6 +409,7 @@ class PL:
         final_df['upl'] = final_df.position * final_df.market - final_df.position * final_df.wap
         final_df['tpl'] = final_df.upl + final_df.rpl     
         
+        
         final_df.fillna(0)
         final_df.replace(np.nan, 0, inplace=True)
         
@@ -430,6 +431,12 @@ class PL:
         val = cash + np.sum(final_df["total_value"])
         totals = ['Total', '', '',  val,'', '', '', np.sum(final_df["upl"]), np.sum(final_df["rpl"]),
                   np.sum(final_df["tpl"]),'','']
+        
+        #insert current tpl into history
+        date = datetime.now().strftime('%Y%m%d%H%M%S%f')
+        self.pl_hist.loc[date, :] = ('Portfolio', 0, 0, 0, 0, np.sum(final_df["tpl"]/mult))
+        db.pl_hist_insert(self.pl_hist, date)        
+        
         #format total row
         for item in range(len(totals)):
             if type(totals[item]) is not str:

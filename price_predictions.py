@@ -22,9 +22,9 @@ def garch_predict(ticker, user):
     from arch import arch_model
     from get_currency_info import get_current
     
-    returns = prepare_returns(ticker)['log_ret']*10 #to prevent underflow
+    returns = prepare_returns(ticker)['log_ret']*10 #to prevent underflow during fit
         
-    am = arch_model(returns, p=1, o=0, q=1, dist='StudentsT')
+    am = arch_model(returns, p=1, o=0, q=2, dist='StudentsT')
     res = am.fit(update_freq=5, disp='off')
 
     change = res.forecast(horizon=1).mean.iloc[-1,0]/10
