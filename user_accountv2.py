@@ -300,7 +300,7 @@ class PL:
                     gain = wap * shares - total
                     rpl = self.pl.loc[ticker, "rpl"] + gain
                     self.pl.loc[ticker, "rpl"] = rpl
-                    self.pl_hist.loc[date, ['ticker', 'rpl', 'position', 'rpl', 'wap']]  = (
+                    self.pl_hist.loc[date, ['ticker', 'rpl', 'position', 'wap']]  = (
                         ticker, rpl, new_shares, wap)
                     self.calc_tpl(ticker, date, new_shares, wap, market, gain , -1)
                     

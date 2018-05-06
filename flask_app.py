@@ -85,7 +85,7 @@ def show_price():
     ticker = request.args.get('ticker')
     
     if ticker != None:
-        data = graph_cols(my_blotter.blotter, ticker, 'price', 'Purchase Price History', account)
+        data = graph_cols(my_blotter.blotter, ticker, 'price', 'Trade Price History', account)
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'Ticker not found'
