@@ -15,7 +15,6 @@ def graph_cols(df, tick, column, title, user):
     
     
     df = df[df['ticker'] == tick][column] * user.get_mult()
-    df = df.round(2)
     dates = pd.to_datetime(df.index, format = '%Y%m%d%H%M%S%f')
     
     price = Scatter(x= dates, y = df, line = Line(width = 2, color = 'blue'), name = tick)
@@ -39,7 +38,6 @@ def graph_tots(df, column, column_name, user, pl):
         ts = ts.append(pd.Series([pl.tpl], index = [date]))    
         
     dates = pd.to_datetime(ts.index, format = '%Y%m%d%H%M%S%f')
-    ts = ts.round(2)
     
     price = Scatter(x= dates, y = ts, line = Line(width = 2, color = 'blue'), name = column_name)
     layout = dict(title = column_name + ' History')
