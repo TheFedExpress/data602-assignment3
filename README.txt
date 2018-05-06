@@ -13,7 +13,7 @@ Setup
 Once the requirements are met, the user should clone the repository, and execute the flask_app.py file.
 
 Alternative option:
-Dockerhub link: https://hub.docker.com/r/pgoodridge/data602-assignment2/
+Dockerhub link: https://hub.docker.com/r/pgoodridge/data602-assignment3/
 
 Usage
 =====
