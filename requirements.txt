@@ -3,7 +3,6 @@ numpy
 pymongo
 plotly
 Flask
-Cython
 scipy
 sklearn
 git+https://github.com/bashtage/arch.git
