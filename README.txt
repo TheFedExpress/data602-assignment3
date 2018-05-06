@@ -35,7 +35,7 @@ To help the user make better trade decisions, we have added several new features
 **Notes** 
 
 The pricing prediction is computed at startup.  This will add a few seconds to startup time
-Total portfolio PL is computed during each trade and each PL view.  This determines the values for the plot from the PL page.
+Total portfolio PL is updated during each trade only for the currency traded.  This determines the values for the plot from the PL page.
 
 **Definitions**
 

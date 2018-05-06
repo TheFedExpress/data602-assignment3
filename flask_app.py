@@ -97,7 +97,7 @@ def show_cash():
     from charts import graph_tots
     
     if my_blotter.blotter_rows > 0:
-        data = graph_tots(my_blotter.blotter, 'cash_balance', 'Cash Balance', account)
+        data = graph_tots(my_blotter.blotter, 'cash_balance', 'Cash Balance', account, my_pl)
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'No Trading History'
@@ -109,7 +109,7 @@ def show_tpl():
     from charts import graph_tots
     
     if my_blotter.blotter_rows > 0:
-        data = graph_tots(my_pl.pl_hist, 'tpl', 'Portfolio PL', account)
+        data = graph_tots(my_pl.pl_hist, 'tpl', 'Portfolio PL', account, my_pl)
         my_plot = plot(data, output_type="div", show_link=False)
     else:
         my_plot = 'No Trading History'

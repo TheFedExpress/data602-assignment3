@@ -15,6 +15,7 @@ def graph_cols(df, tick, column, title, user):
     
     
     df = df[df['ticker'] == tick][column] * user.get_mult()
+    df = df.round(2)
     dates = pd.to_datetime(df.index, format = '%Y%m%d%H%M%S%f')
     
     price = Scatter(x= dates, y = df, line = Line(width = 2, color = 'blue'), name = tick)
@@ -25,14 +26,22 @@ def graph_cols(df, tick, column, title, user):
     
     return fig
 
-def graph_tots(df, column, column_name, user):
+def graph_tots(df, column, column_name, user, pl):
     import pandas as pd
     from plotly.graph_objs import Scatter, Data, Line, Figure
+    from datetime import datetime
     
-    df = df[column] * user.get_mult()
-    dates = pd.to_datetime(df.index, format = '%Y%m%d%H%M%S%f')
+    ts = df[column] * user.get_mult()
     
-    price = Scatter(x= dates, y = df, line = Line(width = 2, color = 'blue'), name = column_name)
+    #To guarentee the most recent amount matches the PL display
+    if column =='tpl':
+        date = datetime.now().strftime('%Y%m%d%H%M%S%f')
+        ts = ts.append(pd.Series([pl.tpl], index = [date]))    
+        
+    dates = pd.to_datetime(ts.index, format = '%Y%m%d%H%M%S%f')
+    ts = ts.round(2)
+    
+    price = Scatter(x= dates, y = ts, line = Line(width = 2, color = 'blue'), name = column_name)
     layout = dict(title = column_name + ' History')
     
     data = Data([price])
